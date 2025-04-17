@@ -4,53 +4,36 @@ import java.util.ArrayList;
 
 public class Steganography {
 
-    private static int[] getBitPairs(int n) {
-        return new int[]{n & 3, (n >> 2) & 3, (n >> 4) & 3};
-    }
-
     public static void clearLow(Pixel p) {
-        int red = p.getRed() & 0xFC;
-        int green = p.getGreen() & 0xFC;
-        int blue = p.getBlue() & 0xFC;
-        p.setColor(new Color(red, green, blue));
+        p.setColor(new Color((p.getRed() / 4) * 4, (p.getGreen() / 4) * 4, (p.getBlue() / 4) * 4));
     }
 
     public static Picture testClearLow(Picture pic) {
         Picture copy = new Picture(pic);
-        Pixel[][] px = copy.getPixels2D();
-        for (Pixel[] row : px) {
-            for (Pixel p : row) clearLow(p);
-        }
+        for (Pixel[] row : copy.getPixels2D())
+            for (Pixel px : row) clearLow(px);
         return copy;
     }
 
     public static void setLow(Pixel p, Color c) {
-        int red = (p.getRed() & 0xFC) | (c.getRed() >> 6);
-        int green = (p.getGreen() & 0xFC) | (c.getGreen() >> 6);
-        int blue = (p.getBlue() & 0xFC) | (c.getBlue() >> 6);
-        p.setColor(new Color(red, green, blue));
+        int rBits = c.getRed() / 64;
+        int gBits = c.getGreen() / 64;
+        int bBits = c.getBlue() / 64;
+        p.setColor(new Color((p.getRed() / 4) * 4 + rBits, (p.getGreen() / 4) * 4 + gBits, (p.getBlue() / 4) * 4 + bBits));
     }
 
     public static Picture testSetLow(Picture pic, Color c) {
         Picture copy = new Picture(pic);
-        Pixel[][] px = copy.getPixels2D();
-        for (Pixel[] row : px) {
-            for (Pixel p : row) setLow(p, c);
-        }
+        for (Pixel[] row : copy.getPixels2D())
+            for (Pixel px : row) setLow(px, c);
         return copy;
     }
 
     public static Picture revealPicture(Picture hidden) {
         Picture copy = new Picture(hidden);
-        Pixel[][] px = copy.getPixels2D();
-        for (Pixel[] row : px) {
-            for (Pixel p : row) {
-                int r = (p.getRed() & 3) << 6;
-                int g = (p.getGreen() & 3) << 6;
-                int b = (p.getBlue() & 3) << 6;
-                p.setColor(new Color(r, g, b));
-            }
-        }
+        for (Pixel[] row : copy.getPixels2D())
+            for (Pixel px : row)
+                px.setColor(new Color((px.getRed() % 4) * 64, (px.getGreen() % 4) * 64, (px.getBlue() % 4) * 64));
         return copy;
     }
 
@@ -58,14 +41,29 @@ public class Steganography {
         return secret.getWidth() <= source.getWidth() && secret.getHeight() <= source.getHeight();
     }
 
+    private static boolean canHideSub(Picture host, Picture sub, int r, int c) {
+        return r >= 0 && c >= 0 && r + sub.getHeight() <= host.getHeight() && c + sub.getWidth() <= host.getWidth();
+    }
+
     public static Picture hidePicture(Picture source, Picture secret) {
-        if (!canHide(source, secret)) return null;
-        Picture combined = new Picture(source);
-        Pixel[][] src = combined.getPixels2D();
-        Pixel[][] sec = secret.getPixels2D();
-        for (int r = 0; r < sec.length; r++) {
-            for (int c = 0; c < sec[0].length; c++) setLow(src[r][c], sec[r][c].getColor());
+        if (!canHide(source, secret)) {
+            System.out.println("Secret image is larger than the host – resize first.");
+            return null;
         }
+        return hidePicture(source, secret, 0, 0);
+    }
+
+    public static Picture hidePicture(Picture source, Picture secret, int startRow, int startCol) {
+        if (!canHideSub(source, secret, startRow, startCol)) {
+            System.out.println("Secret won’t fit at that location.");
+            return null;
+        }
+        Picture combined = new Picture(source);
+        Pixel[][] host = combined.getPixels2D();
+        Pixel[][] sec = secret.getPixels2D();
+        for (int r = 0; r < sec.length; r++)
+            for (int c = 0; c < sec[0].length; c++)
+                setLow(host[r + startRow][c + startCol], sec[r][c].getColor());
         return combined;
     }
 
@@ -73,38 +71,34 @@ public class Steganography {
         if (a.getWidth() != b.getWidth() || a.getHeight() != b.getHeight()) return false;
         Pixel[][] p1 = a.getPixels2D();
         Pixel[][] p2 = b.getPixels2D();
-        for (int r = 0; r < p1.length; r++) {
-            for (int c = 0; c < p1[0].length; c++) {
+        for (int r = 0; r < p1.length; r++)
+            for (int c = 0; c < p1[0].length; c++)
                 if (!p1[r][c].getColor().equals(p2[r][c].getColor())) return false;
-            }
-        }
         return true;
     }
 
     public static ArrayList<Point> findDifferences(Picture a, Picture b) {
-        ArrayList<Point> diff = new ArrayList<>();
-        if (a.getWidth() != b.getWidth() || a.getHeight() != b.getHeight()) return diff;
+        ArrayList<Point> diffs = new ArrayList<>();
+        if (a.getWidth() != b.getWidth() || a.getHeight() != b.getHeight()) return diffs;
         Pixel[][] p1 = a.getPixels2D();
         Pixel[][] p2 = b.getPixels2D();
-        for (int r = 0; r < p1.length; r++) {
-            for (int c = 0; c < p1[0].length; c++) {
-                if (!p1[r][c].getColor().equals(p2[r][c].getColor())) diff.add(new Point(c, r));
-            }
-        }
-        return diff;
+        for (int r = 0; r < p1.length; r++)
+            for (int c = 0; c < p1[0].length; c++)
+                if (!p1[r][c].getColor().equals(p2[r][c].getColor())) diffs.add(new Point(c, r));
+        return diffs;
     }
 
-    public static Picture showDifferentArea(Picture pic, ArrayList<Point> diff) {
-        Picture copy = new Picture(pic);
-        if (diff.isEmpty()) return copy;
+    public static Picture showDifferentArea(Picture pic, ArrayList<Point> diffs) {
+        if (diffs == null || diffs.isEmpty()) return new Picture(pic);
         int minR = Integer.MAX_VALUE, maxR = -1, minC = Integer.MAX_VALUE, maxC = -1;
-        for (Point p : diff) {
-            if (p.y < minR) minR = p.y;
-            if (p.y > maxR) maxR = p.y;
-            if (p.x < minC) minC = p.x;
-            if (p.x > maxC) maxC = p.x;
+        for (Point p : diffs) {
+            minR = Math.min(minR, p.y);
+            maxR = Math.max(maxR, p.y);
+            minC = Math.min(minC, p.x);
+            maxC = Math.max(maxC, p.x);
         }
-        Pixel[][] px = copy.getPixels2D();
+        Picture out = new Picture(pic);
+        Pixel[][] px = out.getPixels2D();
         for (int c = minC; c <= maxC; c++) {
             px[minR][c].setColor(Color.RED);
             px[maxR][c].setColor(Color.RED);
@@ -113,114 +107,107 @@ public class Steganography {
             px[r][minC].setColor(Color.RED);
             px[r][maxC].setColor(Color.RED);
         }
-        return copy;
+        return out;
     }
 
     public static ArrayList<Integer> encodeString(String s) {
         s = s.toUpperCase();
-        ArrayList<Integer> result = new ArrayList<>();
-        for (char ch : s.toCharArray()) result.add(ch == ' ' ? 27 : ch - 'A' + 1);
-        result.add(0);
-        return result;
+        ArrayList<Integer> list = new ArrayList<>();
+        for (char ch : s.toCharArray()) {
+            if (ch == ' ') list.add(27);
+            else if ('A' <= ch && ch <= 'Z') list.add(ch - 'A' + 1);
+        }
+        list.add(0);
+        return list;
     }
 
     public static String decodeString(ArrayList<Integer> codes) {
-        StringBuilder sb = new StringBuilder();
+        StringBuilder out = new StringBuilder();
         for (int code : codes) {
             if (code == 0) break;
-            sb.append(code == 27 ? ' ' : (char) ('A' + code - 1));
+            if (code == 27) out.append(' ');
+            else if (code >= 1 && code <= 26) out.append((char) ('A' + code - 1));
         }
-        return sb.toString();
+        return out.toString();
+    }
+
+    private static int[] getBitPairs(int num) {
+        int[] bits = new int[3];
+        int code = num;
+        for (int i = 0; i < 3; i++) {
+            bits[i] = code % 4;
+            code = code / 4;
+        }
+        return bits;
     }
 
     public static Picture hideText(Picture source, String s) {
-        Picture copy = new Picture(source);
         ArrayList<Integer> codes = encodeString(s);
+        if (codes.size() > source.getWidth() * source.getHeight()) {
+            System.out.println("Message too long for this picture.");
+            return null;
+        }
+        Picture copy = new Picture(source);
         Pixel[][] px = copy.getPixels2D();
         int idx = 0;
         outer:
-        for (int r = 0; r < px.length; r++) {
+        for (int r = 0; r < px.length; r++)
             for (int c = 0; c < px[0].length; c++) {
-                if (idx >= codes.size()) break outer;
-                int[] bits = getBitPairs(codes.get(idx));
-                int red = (px[r][c].getRed() & 0xFC) | bits[2];
-                int green = (px[r][c].getGreen() & 0xFC) | bits[1];
-                int blue = (px[r][c].getBlue() & 0xFC) | bits[0];
-                px[r][c].setColor(new Color(red, green, blue));
-                idx++;
+                int code = codes.get(idx++);
+                int[] pairs = getBitPairs(code);
+                Color old = px[r][c].getColor();
+                px[r][c].setColor(new Color((old.getRed() / 4) * 4 + pairs[2], (old.getGreen() / 4) * 4 + pairs[1], (old.getBlue() / 4) * 4 + pairs[0]));
+                if (idx == codes.size()) break outer;
             }
-        }
         return copy;
     }
 
-    public static String revealText(Picture source) {
-        Pixel[][] px = source.getPixels2D();
+    public static String revealText(Picture pic) {
         ArrayList<Integer> codes = new ArrayList<>();
+        Pixel[][] px = pic.getPixels2D();
         outer:
-        for (Pixel[] row : px) {
+        for (Pixel[] row : px)
             for (Pixel p : row) {
-                int code = ((p.getRed() & 3) << 4) | ((p.getGreen() & 3) << 2) | (p.getBlue() & 3);
+                int code = ((p.getRed() % 4) << 4) | ((p.getGreen() % 4) << 2) | (p.getBlue() % 4);
                 codes.add(code);
                 if (code == 0) break outer;
             }
-        }
         return decodeString(codes);
     }
 
     public static Picture creativeEffect(Picture pic, int offset) {
         Picture copy = new Picture(pic);
-        Pixel[][] px = copy.getPixels2D();
-        for (Pixel[] row : px) {
+        for (Pixel[] row : copy.getPixels2D())
             for (Pixel p : row) {
-                int red = Math.min(255, p.getRed() + offset);
-                int green = Math.max(0, p.getGreen() - offset);
-                p.setColor(new Color(red, green, p.getBlue()));
+                int r = Math.min(255, p.getRed() + offset);
+                int g = Math.max(0, p.getGreen() - offset);
+                p.setColor(new Color(r, g, p.getBlue()));
             }
-        }
         return copy;
     }
 
     public static void main(String[] args) {
-        System.out.println("Steganography Lab - Exploring Color");
         Picture beach = new Picture("beach.jpg");
-        beach.explore();
-
+        Picture robot = new Picture("robot.jpg");
         Picture cleared = testClearLow(beach);
-        cleared.explore();
-
-        Picture setLowTest = testSetLow(beach, Color.PINK);
-        setLowTest.explore();
-
-        Picture revealed = revealPicture(setLowTest);
-        revealed.explore();
-
-        Picture secretPic = new Picture("robot.jpg");
-        if (canHide(beach, secretPic)) {
-            Picture hiddenPic = hidePicture(beach, secretPic);
-            hiddenPic.explore();
-            Picture revealedPic = revealPicture(hiddenPic);
-            revealedPic.explore();
-        } else {
-            System.out.println("Source and secret images are not compatible.");
+        Picture pinked = testSetLow(beach, Color.PINK);
+        Picture revealed1 = revealPicture(pinked);
+        Picture hidden = hidePicture(beach, robot);
+        if (hidden != null) {
+            Picture shown = revealPicture(hidden);
+            hidden.explore();
+            shown.explore();
         }
-
-        Picture swan = new Picture("swan.jpg");
-        Picture swan2 = new Picture("swan.jpg");
-        System.out.println("Swan and swan2 are the same: " + isSame(swan, swan2));
-        Picture modifiedSwan = testClearLow(swan);
-        System.out.println("Swan and modified swan are the same (after clearLow): " + isSame(modifiedSwan, swan2));
-        ArrayList<Point> diff = findDifferences(swan, modifiedSwan);
-        System.out.println("Number of different pixels: " + diff.size());
-        Picture diffArea = showDifferentArea(swan, diff);
-        diffArea.explore();
-
-        String message = "HELLO WORLD";
-        Picture textHidden = hideText(beach, message);
-        textHidden.explore();
-        String revealedMessage = revealText(textHidden);
-        System.out.println("Revealed Text: " + revealedMessage);
-
-        Picture creative = creativeEffect(beach, 30);
-        creative.explore();
+        Picture flower = new Picture("flower1.jpg");
+        Picture host = hidePicture(beach, flower, 60, 200);
+        if (host != null) {
+            host.explore();
+            revealPicture(host).explore();
+        }
+        Picture msgPic = hideText(beach, "HELLO WORLD");
+        if (msgPic != null) System.out.println("Revealed text: " + revealText(msgPic));
+        ArrayList<Point> diffs = findDifferences(beach, host);
+        Picture boxed = showDifferentArea(beach, diffs);
+        boxed.explore();
     }
 }
